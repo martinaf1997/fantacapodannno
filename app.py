@@ -37,12 +37,36 @@ def save_state(state):
 state = load_state()
 
 
+# ---- FIX PER FILE VECCHI (IMPORTANTISSIMO) ----
+if "used_actions" not in state:
+    state["used_actions"] = {}
+
+for player in state.get("players", {}):
+    if player not in state["used_actions"]:
+        state["used_actions"][player] = []
+
+
 # ------------------ PAGE ------------------
 
 st.set_page_config(
     page_title="🎆 Fanta Capodanno",
     layout="wide"
 )
+
+st.markdown("""
+<style>
+.big-button button {
+    font-size: 28px !important;
+    padding: 1.2em !important;
+    width: 100%;
+    border-radius: 16px;
+}
+.big-select > div {
+    font-size: 22px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 st.title("🎆 FANTA CAPODANNO 🎆")
 st.caption("Bevi, fai cazzate, accumula punti 🍾")
@@ -73,8 +97,9 @@ st.markdown("---")
 
 mode = st.sidebar.radio(
     "🎮 Modalità",
-    ["Gioco", "Riassunto", "Admin"]
+    ["📱 Smartphone", "Gioco", "Riassunto", "Admin"]
 )
+
 
 
 # ------------------ ADMIN LOGIN ------------------
@@ -214,7 +239,71 @@ elif mode == "Gioco":
             st.caption(
                 f"{h['time']} — {h['player']} 💥 {h['action']} ({h['points']:+d})"
             )
+            
+# ------------------ SMARTPHONE MODE ------------------
 
+elif mode == "📱 Smartphone":
+    st.header("📱 FANTA CAPODANNO")
+
+    if not state["players"] or not state["actions"]:
+        st.warning("⚠️ Setup incompleto (Admin)")
+        st.stop()
+
+    # --- selezione persona ---
+    st.markdown("### 👤 Chi sei?")
+    player = st.selectbox(
+        "",
+        list(state["players"].keys()),
+        key="mobile_player",
+        label_visibility="collapsed"
+    )
+
+    available_actions = [
+        a for a in state["actions"]
+        if a not in state["used_actions"].get(player, [])
+    ]
+
+    st.markdown("---")
+
+    if not available_actions:
+        st.success("🎉 Hai già fatto tutto!")
+        st.stop()
+
+    st.markdown("### 🎭 Cosa hai fatto?")
+
+    for action in available_actions:
+        pts = state["actions"][action]
+
+        if st.button(
+            f"{action} ({pts:+d})",
+            key=f"mobile_{player}_{action}",
+            use_container_width=True
+        ):
+            state["players"][player] += pts
+            state["used_actions"][player].append(action)
+
+            state["history"].append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "player": player,
+                "action": action,
+                "points": pts
+            })
+
+            save_state(state)
+            st.success(f"💥 {action} registrata!")
+            st.rerun()
+
+    st.markdown("---")
+
+    st.subheader("🏆 Classifica")
+    ranking = sorted(
+        state["players"].items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    for p, s in ranking:
+        st.write(f"**{p}** — {s}")
 
 # ------------------ SUMMARY MODE ------------------
 
