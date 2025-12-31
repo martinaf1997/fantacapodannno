@@ -2,7 +2,7 @@ import streamlit as st
 import json
 import os
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DATA_PATH = "data/game_state.json"
 
@@ -19,7 +19,8 @@ def load_state():
     if not os.path.exists(DATA_PATH):
         return {
             "players": {},
-            "actions": {},  # name -> {"points": int, "used": bool}
+            "actions": {},           # action -> points
+            "used_actions": {},      # player -> [actions]
             "history": [],
             "admin_password": None
         }
@@ -44,14 +45,35 @@ st.set_page_config(
 )
 
 st.title("🎆 FANTA CAPODANNO 🎆")
-st.caption("Più caos, più punti, più gloria 🍾")
+st.caption("Bevi, fai cazzate, accumula punti 🍾")
+
+
+# ------------------ TIMER ------------------
+
+now = datetime.now()
+midnight = (now + timedelta(days=1)).replace(
+    hour=0, minute=0, second=0, microsecond=0
+)
+remaining = midnight - now
+
+hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+minutes, seconds = divmod(remainder, 60)
+
+st.markdown(
+    f"""
+    ### ⏰ Countdown alla mezzanotte
+    **{hours:02d}:{minutes:02d}:{seconds:02d}**
+    """
+)
+
+st.markdown("---")
 
 
 # ------------------ SIDEBAR ------------------
 
 mode = st.sidebar.radio(
     "🎮 Modalità",
-    ["Gioco", "Admin"]
+    ["Gioco", "Riassunto", "Admin"]
 )
 
 
@@ -96,6 +118,7 @@ if mode == "Admin":
         if st.button("➕ Aggiungi persona"):
             if new_player and new_player not in state["players"]:
                 state["players"][new_player] = 0
+                state["used_actions"][new_player] = []
                 save_state(state)
                 st.success(f"{new_player} aggiunto 🥳")
 
@@ -104,45 +127,37 @@ if mode == "Admin":
 
     # ---- ACTIONS ----
     with col2:
-        st.subheader("🎭 Azioni (una sola volta!)")
+        st.subheader("🎭 Azioni")
 
         name = st.text_input("Nome azione")
         points = st.number_input("Punti", step=1)
 
         if st.button("➕ Aggiungi azione"):
-            state["actions"][name] = {
-                "points": points,
-                "used": False
-            }
-            save_state(state)
-            st.success("Azione aggiunta 💥")
+            if name:
+                state["actions"][name] = points
+                save_state(state)
+                st.success("Azione aggiunta 💥")
 
-        st.write("Azioni:")
-        for a, v in state["actions"].items():
-            status = "❌ USATA" if v["used"] else "✅ DISPONIBILE"
-            st.write(f"{a}: {v['points']} pt — {status}")
+        st.write("Azioni disponibili:")
+        for a, p in state["actions"].items():
+            st.write(f"{a}: {p} pt")
 
     if st.button("🔥 RESET TOTALE"):
         for p in state["players"]:
             state["players"][p] = 0
-        for a in state["actions"]:
-            state["actions"][a]["used"] = False
+            state["used_actions"][p] = []
         state["history"] = []
         save_state(state)
-        st.warning("Tutto resettato. Caos pronto 🔥")
+        st.warning("Tutto resettato. Si riparte 🍾")
 
 
 # ------------------ GAME MODE ------------------
 
-else:
+elif mode == "Gioco":
     st.header("🎉 MODALITÀ GIOCO")
 
-    available_actions = [
-        a for a, v in state["actions"].items() if not v["used"]
-    ]
-
-    if not state["players"] or not available_actions:
-        st.warning("⚠️ Manca qualcosa (persone o azioni disponibili)")
+    if not state["players"] or not state["actions"]:
+        st.warning("⚠️ Mancano persone o azioni (Admin)")
         st.stop()
 
     col1, col2, col3 = st.columns(3)
@@ -150,15 +165,24 @@ else:
     with col1:
         player = st.selectbox("👤 Persona", list(state["players"].keys()))
 
+    available_actions = [
+        a for a in state["actions"]
+        if a not in state["used_actions"].get(player, [])
+    ]
+
     with col2:
-        action = st.selectbox("🎭 Azione", available_actions)
+        if available_actions:
+            action = st.selectbox("🎭 Azione", available_actions)
+        else:
+            action = None
+            st.warning("🚫 Questa persona ha già fatto tutto!")
 
     with col3:
         st.markdown("### ")
-        if st.button("💣 ASSEGNA", use_container_width=True):
-            pts = state["actions"][action]["points"]
+        if action and st.button("💣 ASSEGNA", use_container_width=True):
+            pts = state["actions"][action]
             state["players"][player] += pts
-            state["actions"][action]["used"] = True
+            state["used_actions"][player].append(action)
 
             state["history"].append({
                 "time": datetime.now().strftime("%H:%M:%S"),
@@ -172,16 +196,44 @@ else:
 
     st.markdown("---")
 
-    st.subheader("🏆 CLASSIFICA")
-    ranking = sorted(state["players"].items(), key=lambda x: x[1], reverse=True)
+    st.subheader("🏆 CLASSIFICA LIVE")
+
+    ranking = sorted(
+        state["players"].items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
 
     for i, (p, s) in enumerate(ranking, 1):
         st.write(f"**{i}. {p}** — {s} punti 🍾")
 
     if state["history"]:
         st.markdown("---")
-        st.subheader("📜 Ultimi disastri")
+        st.subheader("📜 Ultimi eventi")
         for h in reversed(state["history"][-8:]):
             st.caption(
                 f"{h['time']} — {h['player']} 💥 {h['action']} ({h['points']:+d})"
             )
+
+
+# ------------------ SUMMARY MODE ------------------
+
+else:
+    st.header("📊 RIASSUNTO GENERALE")
+
+    if not state["players"]:
+        st.info("Nessun dato ancora 🤷‍♂️")
+        st.stop()
+
+    for player in state["players"]:
+        st.subheader(f"👤 {player}")
+        st.write(f"⭐ **Punteggio:** {state['players'][player]}")
+
+        used = state["used_actions"].get(player, [])
+        if used:
+            st.write("🎭 Azioni fatte:")
+            st.write(", ".join(used))
+        else:
+            st.write("😇 Nessuna azione ancora")
+
+        st.markdown("---")
