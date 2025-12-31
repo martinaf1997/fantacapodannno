@@ -163,9 +163,58 @@ if mode == "Admin":
                 save_state(state)
                 st.success("Azione aggiunta 💥")
 
-        st.write("Azioni disponibili:")
-        for a, p in state["actions"].items():
-            st.write(f"{a}: {p} pt")
+        st.subheader("🎭 Azioni (modifica / elimina)")
+
+        for action, points in list(state["actions"].items()):
+            st.markdown("---")
+            col1, col2, col3 = st.columns([4, 2, 1])
+        
+            with col1:
+                new_name = st.text_input(
+                    "Nome azione",
+                    value=action,
+                    key=f"name_{action}"
+                )
+        
+            with col2:
+                new_points = st.number_input(
+                    "Punti",
+                    value=points,
+                    step=1,
+                    key=f"points_{action}"
+                )
+        
+            with col3:
+                if st.button("💾", key=f"save_{action}"):
+                    # rinomina azione
+                    if new_name != action:
+                        state["actions"][new_name] = state["actions"].pop(action)
+        
+                        # aggiorna anche le azioni già fatte
+                        for p in state["used_actions"]:
+                            state["used_actions"][p] = [
+                                new_name if a == action else a
+                                for a in state["used_actions"][p]
+                            ]
+        
+                    # aggiorna punti
+                    state["actions"][new_name] = new_points
+                    save_state(state)
+                    st.success("Azione aggiornata ✏️")
+                    st.rerun()
+        
+                if st.button("🗑️", key=f"delete_{action}"):
+                    # rimuovi azione
+                    state["actions"].pop(action)
+        
+                    for p in state["used_actions"]:
+                        if action in state["used_actions"][p]:
+                            state["used_actions"][p].remove(action)
+        
+                    save_state(state)
+                    st.warning("Azione eliminata 🗑️")
+                    st.rerun()
+
 
     if st.button("🔥 RESET TOTALE"):
         for p in state["players"]:
