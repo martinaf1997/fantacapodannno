@@ -324,7 +324,7 @@ elif mode == "📱 Smartphone":
         pts = state["actions"][action]
 
         if st.button(
-            f"{action} ({pts:+d})",
+            f"{action}",
             key=f"mobile_{player}_{action}",
             use_container_width=True
         ):
